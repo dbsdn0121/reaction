@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>반응속도 회피 게임</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #111827; /* gray-900 */
+            color: white;
+            overflow: hidden;
+            touch-action: none; /* 모바일에서 스크롤 방지 */
+        }
+
+        .title-font {
+            font-family: 'Black Han Sans', sans-serif;
+        }
+
+        .player {
+            transition: top 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .bullet {
+            /* 총알 애니메이션은 JS에서 직접 제어합니다 */
+            box-shadow: 0 0 15px 5px rgba(250, 204, 21, 0.6);
+        }
+
+        /* 1, 2, 3 배경 숫자 */
+        .lane-bg-number {
+            font-family: 'Black Han Sans', sans-serif;
+            font-size: 8rem;
+            color: rgba(255, 255, 255, 0.03);
+            user-select: none;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col items-center justify-center relative">
+
+    <!-- 메시지 알림 (alert 대체) -->
+    <div id="toast" class="absolute top-5 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-full shadow-lg font-bold opacity-0 transition-opacity duration-300 pointer-events-none z-50">
+        메시지
+    </div>
+
+    <!-- 1. 인증 및 로딩 화면 -->
+    <div id="loading-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-40">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mb-4"></div>
+        <p class="text-xl font-bold animate-pulse">서버에 연결 중입니다...</p>
+    </div>
+
+    <!-- 2. 홈 화면 (방 만들기 / 방 참가) -->
+    <div id="home-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-30 hidden">
+        <h1 class="title-font text-6xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-500 mb-12 drop-shadow-lg">
+            반응속도 건파이트
+        </h1>
+        
+        <div class="space-y-6 w-full max-w-sm px-6">
+            <button id="btn-show-create" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg transform transition hover:scale-105 active:scale-95 text-xl">
+                방 만들기
+            </button>
+            <button id="btn-show-list" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl shadow-lg transform transition hover:scale-105 active:scale-95 text-xl">
+                방 참가하기
+            </button>
+        </div>
+
+        <div class="mt-12 text-gray-400 text-sm max-w-md text-center bg-gray-800/50 p-4 rounded-lg">
+            <p><strong>[게임 방법]</strong></p>
+            <p>공격자: 1, 2, 3 키를 눌러 상대방을 공격하세요.</p>
+            <p>방어자: 상대가 쏠 때 <span class="text-white">↑(위)</span>, <span class="text-white">↓(아래)</span> 키로 피하거나 가만히 있으세요.</p>
+        </div>
+    </div>
+
+    <!-- 방 만들기 모달 -->
+    <div id="modal-create" class="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-40 hidden">
+        <div class="bg-gray-800 p-8 rounded-2xl w-full max-w-sm flex flex-col items-center shadow-2xl border border-gray-700">
+            <h3 class="text-2xl font-bold mb-6">방 이름 설정</h3>
+            <input type="text" id="input-room-name" placeholder="방 이름을 입력하세요" class="w-full bg-gray-900 text-white px-4 py-3 rounded-xl mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center text-lg border border-gray-700">
+            <div class="flex space-x-4 w-full">
+                <button id="btn-cancel-create" class="flex-1 bg-gray-600 hover:bg-gray-500 py-3 rounded-xl font-bold transition">취소</button>
+                <button id="btn-confirm-create" class="flex-1 bg-blue-600 hover:bg-blue-500 py-3 rounded-xl font-bold transition shadow-[0_0_10px_rgba(37,99,235,0.5)]">만들기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 방 목록 모달 -->
+    <div id="modal-list" class="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-40 hidden">
+        <div class="bg-gray-800 p-8 rounded-2xl w-full max-w-md flex flex-col h-[60vh] shadow-2xl border border-gray-700">
+            <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+                <h3 class="text-2xl font-bold">대기 중인 방 목록</h3>
+                <button id="btn-close-list" class="text-gray-400 hover:text-white text-4xl leading-none">&times;</button>
+            </div>
+            <div id="room-list-container" class="flex-1 overflow-y-auto space-y-3 pr-2">
+                <!-- Room Items will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 대기실 화면 -->
+    <div id="lobby-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-20 hidden">
+        <h2 class="text-3xl font-bold mb-4">방이 생성되었습니다!</h2>
+        <p class="text-gray-400 mb-8">상대방이 참가하기를 기다리고 있습니다.</p>
+        
+        <div class="bg-gray-800 border-2 border-gray-600 rounded-2xl p-8 mb-12 w-full max-w-md text-center overflow-hidden">
+            <span id="display-room-code" class="title-font text-5xl md:text-6xl text-yellow-400 block truncate">방 이름</span>
+        </div>
+        
+        <div class="flex items-center space-x-3 text-xl animate-pulse">
+            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+            <span>플레이어 2를 기다리는 중...</span>
+        </div>
+    </div>
+
+    <!-- 4. 게임 화면 -->
+    <div id="game-screen" class="absolute inset-0 flex flex-col bg-gray-900 z-10 hidden">
+        <!-- 상단 정보 UI -->
+        <div class="h-24 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-8 shadow-lg z-10">
+            <div class="flex items-center space-x-4">
+                <div id="p1-indicator" class="w-6 h-6 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+                <span class="text-xl font-bold">Player 1</span>
+            </div>
+            
+            <div id="turn-display" class="title-font text-4xl text-center flex-1 text-yellow-400 drop-shadow-md">
+                당신의 차례입니다!
+            </div>
+
+            <div class="flex items-center space-x-4">
+                <span class="text-xl font-bold">Player 2</span>
+                <div id="p2-indicator" class="w-6 h-6 rounded-full bg-red-500 opacity-30"></div>
+            </div>
+        </div>
+
+        <!-- 메인 게임 아레나 -->
+        <div id="arena" class="relative flex-1 w-full max-w-5xl mx-auto overflow-hidden">
+            <!-- 배경 라인 & 숫자 -->
+            <div class="absolute inset-0 flex flex-col">
+                <div class="flex-1 border-b border-gray-700/50 flex items-center justify-between px-16">
+                    <span class="lane-bg-number">1</span><span class="lane-bg-number">1</span>
+                </div>
+                <div class="flex-1 border-b border-gray-700/50 flex items-center justify-between px-16">
+                    <span class="lane-bg-number">2</span><span class="lane-bg-number">2</span>
+                </div>
+                <div class="flex-1 flex items-center justify-between px-16">
+                    <span class="lane-bg-number">3</span><span class="lane-bg-number">3</span>
+                </div>
+            </div>
+
+            <!-- 플레이어 개체 -->
+            <div id="player1" class="player absolute left-[15%] w-14 h-14 bg-blue-500 rounded-xl transform -translate-x-1/2 -translate-y-1/2 shadow-[0_0_20px_rgba(59,130,246,0.6)] flex items-center justify-center border-2 border-white/20">
+                <div class="w-6 h-2 bg-gray-800 rounded absolute right-[-8px]"></div> <!-- 총구 -->
+            </div>
+            <div id="player2" class="player absolute left-[85%] w-14 h-14 bg-red-500 rounded-xl transform -translate-x-1/2 -translate-y-1/2 shadow-[0_0_20px_rgba(239,68,68,0.6)] flex items-center justify-center border-2 border-white/20">
+                <div class="w-6 h-2 bg-gray-800 rounded absolute left-[-8px]"></div> <!-- 총구 -->
+            </div>
+        </div>
+        
+        <!-- 하단 조작 가이드 -->
+        <div class="h-16 bg-gray-800 flex items-center justify-center text-gray-400">
+            <span id="controls-guide">공격: 숫자 1, 2, 3 누르기</span>
+        </div>
+    </div>
+
+    <!-- 5. 게임 오버 화면 -->
+    <div id="gameover-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm z-50 hidden">
+        <h1 id="winner-text" class="title-font text-7xl mb-8 drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">승리!</h1>
+        <p id="gameover-subtext" class="text-2xl text-gray-300 mb-12">상대방을 정확히 명중시켰습니다.</p>
+        <button onclick="location.reload()" class="bg-white text-black font-bold py-4 px-10 rounded-full shadow-lg transform transition hover:scale-105 active:scale-95 text-2xl">
+            처음으로 돌아가기
+        </button>
+    </div>
+
+    <!-- Firebase Scripts & App Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 환경 변수 처리 (알려주신 Firebase Config 적용)
+        const myFirebaseConfig = {
+            apiKey: "AIzaSyB4OQw9BPG9xJTiF13RZtzmZZ3k8WOFFN4",
+            authDomain: "reaction-314dd.firebaseapp.com",
+            projectId: "reaction-314dd",
+            storageBucket: "reaction-314dd.firebasestorage.app",
+            messagingSenderId: "506060706337",
+            appId: "1:506060706337:web:b159c66e5e2f7e60ad4960",
+            measurementId: "G-T5J9WM5XRM"
+        };
+        
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : myFirebaseConfig;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-reaction-gun-app';
+
+        let app, auth, db;
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (e) {
+            console.error("Firebase 초기화 에러", e);
+        }
+
+        // 전역 상태
+        let currentUser = null;
+        let currentRoomId = null;
+        let myRole = null; // 'p1' (방장) or 'p2' (참가자)
+        let roomDataCache = null;
+        let unsubscribeRoom = null;
+        let unsubscribeRoomList = null;
+        
+        // 게임 상태 관리
+        let myCurrentPos = 2; // 내 현재 Y 위치 (1, 2, 3)
+        let hasDodged = false; // 이번 턴에 회피 키를 눌렀는지 여부
+        let lastShotId = null; // 중복 총알 방지용
+
+        // DOM 요소
+        const screens = {
+            loading: document.getElementById('loading-screen'),
+            home: document.getElementById('home-screen'),
+            lobby: document.getElementById('lobby-screen'),
+            game: document.getElementById('game-screen'),
+            gameover: document.getElementById('gameover-screen')
+        };
+
+        function showScreen(screenName) {
+            Object.values(screens).forEach(s => s.classList.add('hidden'));
+            if (screens[screenName]) screens[screenName].classList.remove('hidden');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => { toast.classList.add('opacity-0'); }, 2500);
+        }
+
+        // 인증 초기화
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Auth error:", error);
+                showToast("로그인 실패. 새로고침 해주세요.");
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                showScreen('home');
+            }
+        });
+
+        // 위치(1, 2, 3)를 CSS top 퍼센트로 변환
+        const posMap = { 1: '16.6%', 2: '50%', 3: '83.3%' };
+
+        // 방 만들기 모달 열기/닫기
+        document.getElementById('btn-show-create').addEventListener('click', () => {
+            document.getElementById('modal-create').classList.remove('hidden');
+            document.getElementById('input-room-name').value = '';
+            document.getElementById('input-room-name').focus();
+        });
+
+        document.getElementById('btn-cancel-create').addEventListener('click', () => {
+            document.getElementById('modal-create').classList.add('hidden');
+        });
+
+        // 실제 방 생성
+        document.getElementById('btn-confirm-create').addEventListener('click', async () => {
+            if (!currentUser) return;
+            const roomName = document.getElementById('input-room-name').value.trim() || '이름 없는 방';
+            const roomId = crypto.randomUUID(); // 고유 ID 생성
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+            
+            try {
+                await setDoc(roomRef, {
+                    name: roomName,
+                    p1: currentUser.uid,
+                    p2: null,
+                    status: 'waiting',
+                    turn: 'p1', // p1 먼저 공격
+                    p1Pos: 2,
+                    p2Pos: 2,
+                    shot: null,
+                    winner: null,
+                    createdAt: Date.now()
+                });
+                
+                myRole = 'p1';
+                currentRoomId = roomId;
+                document.getElementById('modal-create').classList.add('hidden');
+                document.getElementById('display-room-code').innerText = roomName;
+                showScreen('lobby');
+                listenToRoom(roomId);
+            } catch (error) {
+                console.error("Error creating room:", error);
+                showToast("방 생성에 실패했습니다.");
+            }
+        });
+
+        // 방 목록 모달 열기/닫기
+        document.getElementById('btn-show-list').addEventListener('click', () => {
+            document.getElementById('modal-list').classList.remove('hidden');
+            listenToRoomList();
+        });
+
+        document.getElementById('btn-close-list').addEventListener('click', () => {
+            document.getElementById('modal-list').classList.add('hidden');
+            if (unsubscribeRoomList) {
+                unsubscribeRoomList();
+                unsubscribeRoomList = null;
+            }
+        });
+
+        // 방 목록 실시간 수신
+        function listenToRoomList() {
+            const roomsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
+            
+            unsubscribeRoomList = onSnapshot(roomsColRef, (snapshot) => {
+                const container = document.getElementById('room-list-container');
+                container.innerHTML = '';
+                
+                let count = 0;
+                // 복잡한 쿼리 대신 클라이언트에서 필터링 (Firebase 규칙 준수)
+                const rooms = [];
+                snapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    if (data.status === 'waiting' && data.p1 !== currentUser.uid) { // 내 방은 안 보이게
+                        rooms.push({ id: docSnap.id, ...data });
+                    }
+                });
+
+                // 최신 생성순 정렬
+                rooms.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+                rooms.forEach((room) => {
+                    count++;
+                    const item = document.createElement('div');
+                    item.className = 'bg-gray-700 p-4 rounded-xl flex justify-between items-center transition hover:bg-gray-600';
+                    item.innerHTML = `
+                        <span class="font-bold text-lg truncate flex-1 mr-4">${room.name}</span>
+                        <button class="join-btn bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold shadow-md transform transition hover:scale-105 active:scale-95" data-id="${room.id}">
+                            참가
+                        </button>
+                    `;
+                    container.appendChild(item);
+                });
+
+                if (count === 0) {
+                    container.innerHTML = '<div class="text-center text-gray-400 mt-10 font-bold">대기 중인 방이 없습니다.</div>';
+                }
+
+                // 참가 버튼 이벤트 바인딩
+                document.querySelectorAll('.join-btn').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const roomId = e.target.getAttribute('data-id');
+                        await joinRoomById(roomId);
+                    });
+                });
+            }, (error) => {
+                console.error("Room list error:", error);
+                showToast("방 목록을 불러오는 중 에러가 발생했습니다.");
+            });
+        }
+
+        // 특정 방에 참가
+        async function joinRoomById(roomId) {
+            if (!currentUser) return;
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+            
+            try {
+                const docSnap = await getDoc(roomRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.p2 || data.status !== 'waiting') {
+                        showToast("이미 게임이 시작되었거나 꽉 찬 방입니다.");
+                        return;
+                    }
+
+                    await updateDoc(roomRef, {
+                        p2: currentUser.uid,
+                        status: 'playing'
+                    });
+
+                    myRole = 'p2';
+                    currentRoomId = roomId;
+                    
+                    document.getElementById('modal-list').classList.add('hidden');
+                    if (unsubscribeRoomList) {
+                        unsubscribeRoomList();
+                        unsubscribeRoomList = null;
+                    }
+
+                    listenToRoom(roomId);
+                }
+            } catch (error) {
+                console.error("Error joining room:", error);
+                showToast("참가 중 오류가 발생했습니다.");
+            }
+        }
+
+        // 방 상태 실시간 수신
+        function listenToRoom(roomId) {
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+            
+            unsubscribeRoom = onSnapshot(roomRef, (snapshot) => {
+                if (!snapshot.exists()) return;
+                const data = snapshot.data();
+                roomDataCache = data;
+
+                if (data.status === 'playing' && screens.lobby.classList.contains('hidden') === false) {
+                    showScreen('game');
+                }
+
+                if (data.status === 'playing') {
+                    updateGameUI(data);
+                } else if (data.status === 'gameover') {
+                    showGameOver(data);
+                }
+            }, (error) => {
+                console.error("Snapshot error:", error);
+            });
+        }
+
+        function updateGameUI(data) {
+            const isMyTurn = myRole === data.turn;
+            const turnDisplay = document.getElementById('turn-display');
+            const p1Indicator = document.getElementById('p1-indicator');
+            const p2Indicator = document.getElementById('p2-indicator');
+            const guide = document.getElementById('controls-guide');
+
+            // 턴 UI 업데이트
+            if (isMyTurn) {
+                turnDisplay.innerText = "당신의 차례! 공격하세요";
+                turnDisplay.className = "title-font text-4xl text-center flex-1 text-yellow-400 drop-shadow-md";
+                guide.innerText = "공격: 숫자키 [1], [2], [3] 누르기";
+            } else {
+                turnDisplay.innerText = "방어 준비! 적이 공격합니다";
+                turnDisplay.className = "title-font text-3xl text-center flex-1 text-red-400 drop-shadow-md";
+                guide.innerText = "방어: 상대가 쏘면 [↑], [↓] 방향키로 피하거나 대기";
+            }
+
+            p1Indicator.style.opacity = data.turn === 'p1' ? '1' : '0.3';
+            p1Indicator.style.boxShadow = data.turn === 'p1' ? '0 0 10px rgba(59,130,246,0.8)' : 'none';
+            p2Indicator.style.opacity = data.turn === 'p2' ? '1' : '0.3';
+            p2Indicator.style.boxShadow = data.turn === 'p2' ? '0 0 10px rgba(239,68,68,0.8)' : 'none';
+
+            // 플레이어 위치 업데이트 (내가 방어자이고 방금 움직였다면 내 로컬 위치 우선 적용)
+            const displayP1Pos = (myRole === 'p1' && !isMyTurn && hasDodged) ? myCurrentPos : data.p1Pos;
+            const displayP2Pos = (myRole === 'p2' && !isMyTurn && hasDodged) ? myCurrentPos : data.p2Pos;
+
+            document.getElementById('player1').style.top = posMap[displayP1Pos];
+            document.getElementById('player2').style.top = posMap[displayP2Pos];
+
+            // 총알 감지 및 애니메이션 처리
+            if (data.shot && data.shot.id !== lastShotId) {
+                lastShotId = data.shot.id;
+                triggerShotAnimation(data);
+            }
+        }
+
+        // 총알 발사 및 판정 로직
+        function triggerShotAnimation(data) {
+            const arena = document.getElementById('arena');
+            const bullet = document.createElement('div');
+            bullet.className = 'absolute w-6 h-3 bg-yellow-400 rounded-full bullet z-20';
+            
+            const lane = data.shot.lane;
+            const shooter = data.turn; // 현재 턴인 사람이 쏜 사람
+            const isTarget = myRole !== shooter; // 내가 맞는 역할인지 여부
+
+            bullet.style.top = posMap[lane];
+            bullet.style.transform = 'translateY(-50%)';
+
+            // 시작 위치
+            if (shooter === 'p1') {
+                bullet.style.left = '16%';
+            } else {
+                bullet.style.left = '84%';
+                bullet.style.transform = 'translateY(-50%) scaleX(-1)'; // 총알 방향 반전
+            }
+
+            arena.appendChild(bullet);
+
+            // 턴이 바뀌면서 회피 가능 상태 리셋
+            if (isTarget) {
+                hasDodged = false;
+            }
+
+            // 애니메이션 시작 (0.05초 딜레이 후 목표물 향해 이동)
+            setTimeout(() => {
+                bullet.style.transition = 'left 0.6s linear';
+                if (shooter === 'p1') {
+                    bullet.style.left = '85%'; // P2 위치로
+                } else {
+                    bullet.style.left = '15%'; // P1 위치로
+                }
+            }, 50);
+
+            // 애니메이션 종료 (약 0.65초 후 판정)
+            setTimeout(() => {
+                bullet.remove();
+
+                // **중요**: 레이스 컨디션을 막기 위해 오직 방어자(Target)만이 판정을 계산하고 DB에 업데이트함.
+                if (isTarget) {
+                    evaluateShotAndEndTurn(data.shot.lane, shooter);
+                }
+            }, 650);
+        }
+
+        // 방어자가 자신과 총알의 위치를 비교하여 결과 기록
+        async function evaluateShotAndEndTurn(shotLane, shooter) {
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+            
+            if (myCurrentPos === shotLane) {
+                // 명중! (내가 죽음)
+                await updateDoc(roomRef, {
+                    status: 'gameover',
+                    winner: shooter
+                });
+            } else {
+                // 회피 성공! (턴 교체 및 위치 초기화)
+                myCurrentPos = 2; // 로컬 위치도 센터로 복구
+                await updateDoc(roomRef, {
+                    turn: myRole, // 내 턴으로 가져옴
+                    shot: null,
+                    p1Pos: 2,
+                    p2Pos: 2
+                });
+            }
+        }
+
+        // 게임 오버 화면 표시
+        function showGameOver(data) {
+            showScreen('gameover');
+            const winnerText = document.getElementById('winner-text');
+            const subText = document.getElementById('gameover-subtext');
+            const p1El = document.getElementById('player1');
+            const p2El = document.getElementById('player2');
+
+            if (data.winner === myRole) {
+                winnerText.innerText = "승리!";
+                winnerText.className = "title-font text-8xl mb-4 text-blue-400 drop-shadow-[0_0_20px_rgba(59,130,246,0.8)]";
+                subText.innerText = "상대방을 완벽하게 명중시켰습니다!";
+                // 죽은 플레이어 연출
+                if (myRole === 'p1') { p2El.style.transform += ' rotate(90deg) scale(0.5)'; p2El.style.opacity = '0.5'; }
+                else { p1El.style.transform += ' rotate(-90deg) scale(0.5)'; p1El.style.opacity = '0.5'; }
+            } else {
+                winnerText.innerText = "패배...";
+                winnerText.className = "title-font text-8xl mb-4 text-red-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]";
+                subText.innerText = "총알을 피하지 못했습니다.";
+                // 죽은 플레이어 연출
+                if (myRole === 'p1') { p1El.style.transform += ' rotate(-90deg) scale(0.5)'; p1El.style.opacity = '0.5'; }
+                else { p2El.style.transform += ' rotate(90deg) scale(0.5)'; p2El.style.opacity = '0.5'; }
+            }
+        }
+
+        // 키보드 조작 이벤트
+        window.addEventListener('keydown', (e) => {
+            if (!roomDataCache || roomDataCache.status !== 'playing') return;
+
+            const isMyTurn = myRole === roomDataCache.turn;
+
+            if (isMyTurn) {
+                // [공격자 로직] 총알이 없을 때만 쏠 수 있음
+                if (!roomDataCache.shot) {
+                    if (['1', '2', '3'].includes(e.key)) {
+                        const lane = parseInt(e.key);
+                        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+                        
+                        // 발사 기록 업데이트 (모두에게 애니메이션 트리거 됨)
+                        updateDoc(roomRef, {
+                            shot: { lane: lane, id: Math.random().toString() }
+                        });
+                    }
+                }
+            } else {
+                // [방어자 로직] 총알이 날아오는 중에, 단 한 번만 위/아래 이동 가능
+                if (roomDataCache.shot && !hasDodged) {
+                    let newPos = null;
+                    if (e.key === 'ArrowUp') newPos = 1;      // 위 키: 1번
+                    if (e.key === 'ArrowDown') newPos = 3;    // 아래 키: 3번
+
+                    if (newPos !== null) {
+                        hasDodged = true;
+                        myCurrentPos = newPos;
+                        
+                        // 화면에 즉시 반영
+                        const myPlayerEl = document.getElementById(myRole === 'p1' ? 'player1' : 'player2');
+                        myPlayerEl.style.top = posMap[newPos];
+
+                        // DB 업데이트 (상대 화면에도 내가 움직인 것을 보여줌)
+                        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+                        updateDoc(roomRef, {
+                            [myRole === 'p1' ? 'p1Pos' : 'p2Pos']: newPos
+                        });
+                    }
+                }
+            }
+        });
+
+        // 초기 실행
+        initAuth();
+
+    </script>
+</body>
+</html>
