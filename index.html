@@ -36,6 +36,29 @@
             color: rgba(255, 255, 255, 0.03);
             user-select: none;
         }
+
+        /* 추가된 애니메이션: 하트 깨짐 효과 */
+        @keyframes heartShatter {
+            0% { transform: scale(1); opacity: 1; fill: #ef4444; }
+            50% { transform: scale(1.4); opacity: 0.8; fill: #6b7280; }
+            100% { transform: scale(1); opacity: 1; fill: none; stroke: currentColor; color: #6b7280; }
+        }
+        .heart-shatter {
+            animation: heartShatter 0.5s ease-out forwards;
+        }
+
+        /* 추가된 애니메이션: 플레이어 피격 흔들림 효과 */
+        @keyframes damageShake {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            20% { transform: translate(-50%, -50%) rotate(-10deg) scale(1.1); background-color: #ef4444; border-color: white; }
+            40% { transform: translate(-50%, -50%) rotate(10deg); }
+            60% { transform: translate(-50%, -50%) rotate(-10deg); }
+            80% { transform: translate(-50%, -50%) rotate(10deg); }
+            100% { transform: translate(-50%, -50%) rotate(0deg); }
+        }
+        .damage-anim {
+            animation: damageShake 0.4s ease-in-out !important;
+        }
     </style>
 </head>
 <body class="h-screen w-screen flex flex-col items-center justify-center relative">
@@ -53,7 +76,7 @@
 
     <!-- 2. 홈 화면 (방 만들기 / 방 참가) -->
     <div id="home-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 z-30 hidden">
-        <h1 class="title-font text-6xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-500 mb-12 drop-shadow-lg">
+        <h1 class="title-font text-6xl text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-red-500 mb-12 drop-shadow-lg text-center leading-tight">
             반응속도 건파이트
         </h1>
         
@@ -68,6 +91,7 @@
 
         <div class="mt-12 text-gray-400 text-sm max-w-md text-center bg-gray-800/50 p-4 rounded-lg">
             <p><strong>[게임 방법]</strong></p>
+            <p>각 플레이어는 3개의 목숨을 가집니다.</p>
             <p>공격자: 1, 2, 3 키를 눌러 상대방을 공격하세요.</p>
             <p>방어자: 상대가 쏠 때 <span class="text-white">↑(위)</span>, <span class="text-white">↓(아래)</span> 키로 피하거나 가만히 있으세요.</p>
         </div>
@@ -119,15 +143,25 @@
         <div class="h-24 bg-gray-800 border-b border-gray-700 flex items-center justify-between px-8 shadow-lg z-10">
             <div class="flex items-center space-x-4">
                 <div id="p1-indicator" class="w-6 h-6 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
-                <span class="text-xl font-bold">Player 1</span>
+                <div class="flex flex-col">
+                    <span class="text-xl font-bold">Player 1</span>
+                    <div id="p1-hp" class="flex space-x-1 mt-1">
+                        <!-- P1 하트 동적 생성 -->
+                    </div>
+                </div>
             </div>
             
-            <div id="turn-display" class="title-font text-4xl text-center flex-1 text-yellow-400 drop-shadow-md">
+            <div id="turn-display" class="title-font text-4xl text-center flex-1 text-yellow-400 drop-shadow-md px-4">
                 당신의 차례입니다!
             </div>
 
-            <div class="flex items-center space-x-4">
-                <span class="text-xl font-bold">Player 2</span>
+            <div class="flex items-center space-x-4 text-right">
+                <div class="flex flex-col items-end">
+                    <span class="text-xl font-bold">Player 2</span>
+                    <div id="p2-hp" class="flex space-x-1 mt-1 justify-end">
+                        <!-- P2 하트 동적 생성 -->
+                    </div>
+                </div>
                 <div id="p2-indicator" class="w-6 h-6 rounded-full bg-red-500 opacity-30"></div>
             </div>
         </div>
@@ -165,7 +199,7 @@
     <!-- 5. 게임 오버 화면 -->
     <div id="gameover-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm z-50 hidden">
         <h1 id="winner-text" class="title-font text-7xl mb-8 drop-shadow-[0_0_15px_rgba(255,255,255,0.5)]">승리!</h1>
-        <p id="gameover-subtext" class="text-2xl text-gray-300 mb-12">상대방을 정확히 명중시켰습니다.</p>
+        <p id="gameover-subtext" class="text-2xl text-gray-300 mb-12">상대방을 완벽하게 명중시켰습니다.</p>
         <button onclick="location.reload()" class="bg-white text-black font-bold py-4 px-10 rounded-full shadow-lg transform transition hover:scale-105 active:scale-95 text-2xl">
             처음으로 돌아가기
         </button>
@@ -177,7 +211,7 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // 환경 변수 처리 (알려주신 Firebase Config 적용)
+        // 환경 변수 처리
         const myFirebaseConfig = {
             apiKey: "AIzaSyB4OQw9BPG9xJTiF13RZtzmZZ3k8WOFFN4",
             authDomain: "reaction-314dd.firebaseapp.com",
@@ -212,6 +246,10 @@
         let myCurrentPos = 2; // 내 현재 Y 위치 (1, 2, 3)
         let hasDodged = false; // 이번 턴에 회피 키를 눌렀는지 여부
         let lastShotId = null; // 중복 총알 방지용
+
+        // SVG 자산
+        const svgHeartFill = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-red-500"><path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" /></svg>`;
+        const svgHeartEmpty = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-500"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" /></svg>`;
 
         // DOM 요소
         const screens = {
@@ -285,6 +323,8 @@
                     turn: 'p1', // p1 먼저 공격
                     p1Pos: 2,
                     p2Pos: 2,
+                    p1Hp: 3,    // 추가: P1 초기 목숨
+                    p2Hp: 3,    // 추가: P2 초기 목숨
                     shot: null,
                     winner: null,
                     createdAt: Date.now()
@@ -325,7 +365,6 @@
                 container.innerHTML = '';
                 
                 let count = 0;
-                // 복잡한 쿼리 대신 클라이언트에서 필터링 (Firebase 규칙 준수)
                 const rooms = [];
                 snapshot.forEach((docSnap) => {
                     const data = docSnap.data();
@@ -354,7 +393,6 @@
                     container.innerHTML = '<div class="text-center text-gray-400 mt-10 font-bold">대기 중인 방이 없습니다.</div>';
                 }
 
-                // 참가 버튼 이벤트 바인딩
                 document.querySelectorAll('.join-btn').forEach(btn => {
                     btn.addEventListener('click', async (e) => {
                         const roomId = e.target.getAttribute('data-id');
@@ -410,24 +448,76 @@
             unsubscribeRoom = onSnapshot(roomRef, (snapshot) => {
                 if (!snapshot.exists()) return;
                 const data = snapshot.data();
+                const prevData = roomDataCache;
                 roomDataCache = data;
 
-                // [버그 수정] 참가자(방 목록 모달 등에서 넘어오는 유저)도 게임 화면으로 전환되도록 수정
                 if (data.status === 'playing' && screens.game.classList.contains('hidden')) {
                     showScreen('game');
                 }
 
                 if (data.status === 'playing') {
-                    updateGameUI(data);
+                    // 체력 감소 감지 (피격 애니메이션 트리거)
+                    if (prevData) {
+                        if (data.p1Hp < prevData.p1Hp) triggerDamageAnimation('player1');
+                        if (data.p2Hp < prevData.p2Hp) triggerDamageAnimation('player2');
+                    }
+                    updateGameUI(data, prevData);
                 } else if (data.status === 'gameover') {
-                    showGameOver(data);
+                    updateGameUI(data, prevData); // 마지막 남은 하트 업데이트 위해 호출
+                    setTimeout(() => showGameOver(data), 500); // 죽는 모션 잠깐 보여주기 위해 딜레이
                 }
             }, (error) => {
                 console.error("Snapshot error:", error);
             });
         }
 
-        function updateGameUI(data) {
+        // 피격 시 플레이어 및 화면 이펙트
+        function triggerDamageAnimation(playerId) {
+            const el = document.getElementById(playerId);
+            if (el) {
+                // 기존 애니메이션 클래스가 있다면 초기화
+                el.classList.remove('damage-anim');
+                // 리플로우 강제 유발 (애니메이션 재시작)
+                void el.offsetWidth;
+                el.classList.add('damage-anim');
+            }
+
+            // 화면 테두리 붉은 플래시 효과
+            const arena = document.getElementById('arena');
+            const flash = document.createElement('div');
+            flash.className = 'absolute inset-0 bg-red-600/30 pointer-events-none z-30 transition-opacity duration-300';
+            arena.appendChild(flash);
+            setTimeout(() => {
+                flash.style.opacity = '0';
+                setTimeout(() => flash.remove(), 300);
+            }, 50);
+        }
+
+        // 하트 UI 렌더링 함수
+        function updateHpUI(player, currentHp, prevHp) {
+            const container = document.getElementById(`${player}-hp`);
+            container.innerHTML = '';
+            
+            for (let i = 0; i < 3; i++) {
+                const heartWrapper = document.createElement('div');
+                
+                if (i < currentHp) {
+                    heartWrapper.innerHTML = svgHeartFill;
+                } else {
+                    // 깎인 하트 렌더링
+                    if (prevHp !== undefined && currentHp < prevHp && i === currentHp) {
+                        // 방금 깎인 하트인 경우 깨지는 애니메이션 추가
+                        const svgHtml = svgHeartFill.replace('<svg ', '<svg class="heart-shatter" ');
+                        heartWrapper.innerHTML = svgHtml;
+                    } else {
+                        heartWrapper.innerHTML = svgHeartEmpty;
+                    }
+                }
+                container.appendChild(heartWrapper);
+            }
+        }
+
+        function updateGameUI(data, prevData) {
             const isMyTurn = myRole === data.turn;
             const turnDisplay = document.getElementById('turn-display');
             const p1Indicator = document.getElementById('p1-indicator');
@@ -437,11 +527,11 @@
             // 턴 UI 업데이트
             if (isMyTurn) {
                 turnDisplay.innerText = "당신의 차례! 공격하세요";
-                turnDisplay.className = "title-font text-4xl text-center flex-1 text-yellow-400 drop-shadow-md";
+                turnDisplay.className = "title-font text-3xl md:text-4xl text-center flex-1 text-yellow-400 drop-shadow-md px-4 transition-colors duration-300";
                 guide.innerText = "공격: 숫자키 [1], [2], [3] 누르기";
             } else {
                 turnDisplay.innerText = "방어 준비! 적이 공격합니다";
-                turnDisplay.className = "title-font text-3xl text-center flex-1 text-red-400 drop-shadow-md";
+                turnDisplay.className = "title-font text-2xl md:text-3xl text-center flex-1 text-red-400 drop-shadow-md px-4 transition-colors duration-300";
                 guide.innerText = "방어: 상대가 쏘면 [↑], [↓] 방향키로 피하거나 대기";
             }
 
@@ -450,7 +540,11 @@
             p2Indicator.style.opacity = data.turn === 'p2' ? '1' : '0.3';
             p2Indicator.style.boxShadow = data.turn === 'p2' ? '0 0 10px rgba(239,68,68,0.8)' : 'none';
 
-            // 플레이어 위치 업데이트 (내가 방어자이고 방금 움직였다면 내 로컬 위치 우선 적용)
+            // 체력 UI 업데이트
+            updateHpUI('p1', data.p1Hp, prevData ? prevData.p1Hp : data.p1Hp);
+            updateHpUI('p2', data.p2Hp, prevData ? prevData.p2Hp : data.p2Hp);
+
+            // 플레이어 위치 업데이트 (내가 방어자이고 방금 움직였다면 내 로컬 위치 우선 적용하여 부드럽게 유지)
             const displayP1Pos = (myRole === 'p1' && !isMyTurn && hasDodged) ? myCurrentPos : data.p1Pos;
             const displayP2Pos = (myRole === 'p2' && !isMyTurn && hasDodged) ? myCurrentPos : data.p2Pos;
 
@@ -474,7 +568,7 @@
             const shooter = data.turn; // 현재 턴인 사람이 쏜 사람
             const isTarget = myRole !== shooter; // 내가 맞는 역할인지 여부
             
-            // [기능 변경] 쏘는 사람의 현재 Y 위치를 가져옴
+            // 쏘는 사람의 현재 Y 위치를 가져옴
             const startPos = shooter === 'p1' ? data.p1Pos : data.p2Pos;
 
             // 쏘는 사람의 높이(top)에서 출발
@@ -496,15 +590,11 @@
                 hasDodged = false;
             }
 
-            // [기능 변경] 애니메이션 시작 (목표물을 향해 대각선 이동 및 속도 증가)
+            // 애니메이션 시작 (목표물을 향해 대각선 이동 및 속도 증가)
             setTimeout(() => {
-                // 속도를 0.3초로 더 빠르게 만들고 top, left를 동시에 부드럽게 이동
                 bullet.style.transition = 'left 0.3s linear, top 0.3s linear';
-                
-                // 도착할 Y 위치(타겟이 있는 라인)
                 bullet.style.top = posMap[targetLane]; 
 
-                // 도착할 X 위치
                 if (shooter === 'p1') {
                     bullet.style.left = '85%'; // P2 위치로
                 } else {
@@ -528,11 +618,29 @@
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
             
             if (myCurrentPos === shotLane) {
-                // 명중! (내가 죽음)
-                await updateDoc(roomRef, {
-                    status: 'gameover',
-                    winner: shooter
-                });
+                // 명중! (목숨 감소)
+                const currentHp = myRole === 'p1' ? roomDataCache.p1Hp : roomDataCache.p2Hp;
+                const newHp = currentHp - 1;
+                
+                if (newHp <= 0) {
+                    // 체력이 0이 되면 게임 오버
+                    await updateDoc(roomRef, {
+                        [myRole + 'Hp']: newHp,
+                        status: 'gameover',
+                        winner: shooter,
+                        shot: null
+                    });
+                } else {
+                    // 체력이 남아있다면 위치 초기화 후 턴 넘김
+                    myCurrentPos = 2;
+                    await updateDoc(roomRef, {
+                        [myRole + 'Hp']: newHp,
+                        turn: myRole, // 맞았지만 반격의 기회를 줌
+                        shot: null,
+                        p1Pos: 2,
+                        p2Pos: 2
+                    });
+                }
             } else {
                 // 회피 성공! (턴 교체 및 위치 초기화)
                 myCurrentPos = 2; // 로컬 위치도 센터로 복구
@@ -555,15 +663,15 @@
 
             if (data.winner === myRole) {
                 winnerText.innerText = "승리!";
-                winnerText.className = "title-font text-8xl mb-4 text-blue-400 drop-shadow-[0_0_20px_rgba(59,130,246,0.8)]";
-                subText.innerText = "상대방을 완벽하게 명중시켰습니다!";
+                winnerText.className = "title-font text-7xl md:text-8xl mb-4 text-blue-400 drop-shadow-[0_0_20px_rgba(59,130,246,0.8)]";
+                subText.innerText = "상대방의 모든 체력을 깎았습니다!";
                 // 죽은 플레이어 연출
                 if (myRole === 'p1') { p2El.style.transform += ' rotate(90deg) scale(0.5)'; p2El.style.opacity = '0.5'; }
                 else { p1El.style.transform += ' rotate(-90deg) scale(0.5)'; p1El.style.opacity = '0.5'; }
             } else {
                 winnerText.innerText = "패배...";
-                winnerText.className = "title-font text-8xl mb-4 text-red-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]";
-                subText.innerText = "총알을 피하지 못했습니다.";
+                winnerText.className = "title-font text-7xl md:text-8xl mb-4 text-red-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.8)]";
+                subText.innerText = "모든 목숨을 잃었습니다.";
                 // 죽은 플레이어 연출
                 if (myRole === 'p1') { p1El.style.transform += ' rotate(-90deg) scale(0.5)'; p1El.style.opacity = '0.5'; }
                 else { p2El.style.transform += ' rotate(90deg) scale(0.5)'; p2El.style.opacity = '0.5'; }
