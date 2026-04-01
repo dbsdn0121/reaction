@@ -412,7 +412,8 @@
                 const data = snapshot.data();
                 roomDataCache = data;
 
-                if (data.status === 'playing' && screens.lobby.classList.contains('hidden') === false) {
+                // [버그 수정] 참가자(방 목록 모달 등에서 넘어오는 유저)도 게임 화면으로 전환되도록 수정
+                if (data.status === 'playing' && screens.game.classList.contains('hidden')) {
                     showScreen('game');
                 }
 
@@ -469,14 +470,18 @@
             const bullet = document.createElement('div');
             bullet.className = 'absolute w-6 h-3 bg-yellow-400 rounded-full bullet z-20';
             
-            const lane = data.shot.lane;
+            const targetLane = data.shot.lane;
             const shooter = data.turn; // 현재 턴인 사람이 쏜 사람
             const isTarget = myRole !== shooter; // 내가 맞는 역할인지 여부
+            
+            // [기능 변경] 쏘는 사람의 현재 Y 위치를 가져옴
+            const startPos = shooter === 'p1' ? data.p1Pos : data.p2Pos;
 
-            bullet.style.top = posMap[lane];
+            // 쏘는 사람의 높이(top)에서 출발
+            bullet.style.top = posMap[startPos];
             bullet.style.transform = 'translateY(-50%)';
 
-            // 시작 위치
+            // 시작 X 위치 설정
             if (shooter === 'p1') {
                 bullet.style.left = '16%';
             } else {
@@ -491,9 +496,15 @@
                 hasDodged = false;
             }
 
-            // 애니메이션 시작 (0.05초 딜레이 후 목표물 향해 이동)
+            // [기능 변경] 애니메이션 시작 (목표물을 향해 대각선 이동 및 속도 증가)
             setTimeout(() => {
-                bullet.style.transition = 'left 0.6s linear';
+                // 속도를 0.3초로 더 빠르게 만들고 top, left를 동시에 부드럽게 이동
+                bullet.style.transition = 'left 0.3s linear, top 0.3s linear';
+                
+                // 도착할 Y 위치(타겟이 있는 라인)
+                bullet.style.top = posMap[targetLane]; 
+
+                // 도착할 X 위치
                 if (shooter === 'p1') {
                     bullet.style.left = '85%'; // P2 위치로
                 } else {
@@ -501,15 +512,15 @@
                 }
             }, 50);
 
-            // 애니메이션 종료 (약 0.65초 후 판정)
+            // 애니메이션 종료 (0.35초 후 판정)
             setTimeout(() => {
                 bullet.remove();
 
                 // **중요**: 레이스 컨디션을 막기 위해 오직 방어자(Target)만이 판정을 계산하고 DB에 업데이트함.
                 if (isTarget) {
-                    evaluateShotAndEndTurn(data.shot.lane, shooter);
+                    evaluateShotAndEndTurn(targetLane, shooter);
                 }
-            }, 650);
+            }, 350);
         }
 
         // 방어자가 자신과 총알의 위치를 비교하여 결과 기록
